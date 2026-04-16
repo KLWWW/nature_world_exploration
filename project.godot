@@ -11,8 +11,15 @@ config_version=5
 [application]
 
 config/name="新建游戏项目"
+run/main_scene="uid://djeb0cuoeaeet"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
+config/run/main_scene="res://main.tscn"
+
+[display]
+
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [physics]
 

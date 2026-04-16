@@ -1,0 +1,28 @@
+[gd_scene format=3 uid="uid://bx4k2mhexagon1"]
+
+[ext_resource type="Script" uid="uid://chex_gd_script1" path="res://Script/Hex.gd" id="1_hexscr"]
+
+[node name="Hex" type="Node2D"]
+script = ExtResource("1_hexscr")
+hex_size = 64.0
+fill_color = Color(0.337255, 0.701961, 0.337255, 1)
+border_color = Color(0.152941, 0.4, 0.152941, 1)
+border_width = 2.0
+
+[node name="Polygon2D" type="Polygon2D" parent="."]
+color = Color(0.337255, 0.701961, 0.337255, 1)
+polygon = PackedVector2Array(64, 0, 32, 55.4256, -32, 55.4256, -64, 0, -32, -55.4256, 32, -55.4256)
+
+[node name="Border" type="Line2D" parent="."]
+points = PackedVector2Array(64, 0, 32, 55.4256, -32, 55.4256, -64, 0, -32, -55.4256, 32, -55.4256, 64, 0)
+default_color = Color(0.152941, 0.4, 0.152941, 1)
+width = 2.0
+
+[node name="Area2D" type="Area2D" parent="."]
+
+[node name="CollisionPolygon2D" type="CollisionPolygon2D" parent="Area2D"]
+polygon = PackedVector2Array(64, 0, 32, 55.4256, -32, 55.4256, -64, 0, -32, -55.4256, 32, -55.4256)
+
+[connection signal="input_event" from="Area2D" to="." method="_on_area_input_event"]
+[connection signal="mouse_entered" from="Area2D" to="." method="_on_area_mouse_entered"]
+[connection signal="mouse_exited" from="Area2D" to="." method="_on_area_mouse_exited"]

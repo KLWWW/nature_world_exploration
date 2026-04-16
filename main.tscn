@@ -1,3 +1,11 @@
 [gd_scene format=3 uid="uid://djeb0cuoeaeet"]
 
+[ext_resource type="Script" uid="uid://b0cykx8q8stud" path="res://Script/main.gd" id="1_ig7tw"]
+
 [node name="Node2D" type="Node2D" unique_id=1481814719]
+script = ExtResource("1_ig7tw")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+zoom = Vector2(0.55, 0.55)
+position_smoothing_enabled = true
+position_smoothing_speed = 6.0
