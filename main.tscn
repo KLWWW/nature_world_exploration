@@ -1,11 +1,61 @@
 [gd_scene format=3 uid="uid://djeb0cuoeaeet"]
 
 [ext_resource type="Script" uid="uid://b0cykx8q8stud" path="res://Script/main.gd" id="1_ig7tw"]
+[ext_resource type="Script" path="res://Script/InputController.gd" id="2_jqpwa"]
+[ext_resource type="Script" path="res://Script/HexGrid.gd" id="3_u77vh"]
+[ext_resource type="PackedScene" uid="uid://stamina_bar_scene" path="res://StaminaBar.tscn" id="4_stbar"]
+[ext_resource type="PackedScene" uid="uid://game_over_scene01" path="res://GameOver.tscn" id="5_goscn"]
+[ext_resource type="PackedScene" uid="uid://victory_scene_001" path="res://Victory.tscn" id="6_vicscn"]
 
 [node name="Node2D" type="Node2D" unique_id=1481814719]
 script = ExtResource("1_ig7tw")
+
+[node name="HexGrid" type="Node2D" parent="."]
+script = ExtResource("3_u77vh")
+
+[node name="InputController" type="Node" parent="."]
+script = ExtResource("2_jqpwa")
 
 [node name="Camera2D" type="Camera2D" parent="."]
 zoom = Vector2(0.55, 0.55)
 position_smoothing_enabled = true
 position_smoothing_speed = 6.0
+
+[node name="UILayer" type="CanvasLayer" parent="."]
+
+[node name="StaminaBar" parent="UILayer" instance=ExtResource("4_stbar")]
+resource_name = "体力"
+
+[node name="BubbleBar" parent="UILayer" instance=ExtResource("4_stbar")]
+resource_name = "泡泡"
+bar_color = Color(0.4, 0.75, 1.0, 1.0)
+offset_left = 16.0
+offset_top = 76.0
+offset_right = 260.0
+offset_bottom = 136.0
+
+[node name="ButtonPanel" type="VBoxContainer" parent="UILayer"]
+offset_left = -176.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 100.0
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+grow_horizontal = 0
+theme_override_constants/separation = 8
+
+[node name="RestoreBtn" type="Button" parent="UILayer/ButtonPanel"]
+layout_mode = 2
+text = "恢复体力 +20"
+
+[node name="GameOverBtn" type="Button" parent="UILayer/ButtonPanel"]
+layout_mode = 2
+text = "结束游戏"
+
+[node name="GameOver" parent="UILayer" instance=ExtResource("5_goscn")]
+
+[node name="Victory" parent="UILayer" instance=ExtResource("6_vicscn")]
+
+[connection signal="pressed" from="UILayer/ButtonPanel/RestoreBtn" to="." method="_on_restore_pressed"]
+[connection signal="pressed" from="UILayer/ButtonPanel/GameOverBtn" to="." method="_on_game_over_pressed"]

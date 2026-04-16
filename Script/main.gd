@@ -1,241 +1,233 @@
 extends Node2D
 
-const HEX_SCENE    = preload("res://Hex.tscn")
+# 玩家场景资源，由主场景负责实例化并接入流程。
 const PLAYER_SCENE = preload("res://Player.tscn")
-const HEX_SIZE  = 64.0
-const MAX_TILES = 120
 
-const CUBE_DIRS: Array[Vector3i] = [
-	Vector3i( 1, -1,  0),
-	Vector3i( 1,  0, -1),
-	Vector3i( 0,  1, -1),
-	Vector3i(-1,  1,  0),
-	Vector3i(-1,  0,  1),
-	Vector3i( 0, -1,  1),
-]
+# 体力上限。
+const MAX_STAMINA := 100
+# 泡泡上限。
+const MAX_BUBBLES := 30
 
-var _player:      Node2D
-var _player_cube: Vector3i = Vector3i(0, 0, 0)
-var _is_moving:   bool     = false
+# 当前场景中的玩家节点。
+var _player
+# 玩家当前所在的六边形 cube 坐标。
+var _player_cube: Vector3i = Vector3i.ZERO
+# 是否正处于整条路径移动流程中，用于阻止重复输入。
+var _is_moving := false
+# 玩家当前体力值。
+var _stamina: int = MAX_STAMINA
+# 玩家当前泡泡数量。
+var _bubbles: int = MAX_BUBBLES
 
-## cube坐标 → 世界位置（局部）
-var _hex_map:   Dictionary = {}
-## cube坐标 → Hex节点（用于高亮）
-var _hex_nodes: Dictionary = {}
-## 当前高亮中的路径节点列表
-var _path_nodes: Array    = []
-## 当前预览路径的节点列表
+# 正式移动路径上仍处于高亮状态的格子节点。
+var _path_nodes: Array = []
+# 鼠标悬停预览路径上正在高亮的格子节点。
 var _preview_nodes: Array = []
+# 当前被玩家占据的格子节点。
+var _occupied_node = null
+# 当前移动的起点格节点，用于显示起点状态。
+var _origin_node = null
+
+# 地图层，负责地图生成、坐标换算和寻路。
+@onready var _hex_grid = $HexGrid
+# 输入层，负责把鼠标操作转换成场景意图。
+@onready var _input_controller = $InputController
+# 摄像机节点，用于持续跟随玩家。
+@onready var _camera: Camera2D = $Camera2D
+# 体力 UI 条。
+@onready var _stamina_bar = $UILayer/StaminaBar
+# 泡泡 UI 条。
+@onready var _bubble_bar = $UILayer/BubbleBar
+# Game Over 界面。
+@onready var _game_over = $UILayer/GameOver
+# 胜利界面。
+@onready var _victory = $UILayer/Victory
 
 
+# 初始化主场景：接入输入、生成地图、生成玩家，并处理视口居中。
 func _ready() -> void:
+	# 先保证主场景始终以视口中心为锚点。
 	get_tree().root.size_changed.connect(_on_viewport_size_changed)
 	_on_viewport_size_changed()
 
-	# 生成六角地图
-	var count := 0
-	var ring  := 0
-	while count < MAX_TILES:
-		for cube: Vector3i in _get_ring(ring):
-			if count >= MAX_TILES:
-				break
-			var world_pos := _cube_to_world(cube)
-			var hex: Node2D = HEX_SCENE.instantiate()
-			hex.position = world_pos
-			# 绑定 cube 坐标一起传给回调
-			hex.hex_clicked.connect(_on_hex_clicked.bind(cube))
-			add_child(hex)
-			_hex_map[cube]   = world_pos
-			_hex_nodes[cube] = hex
-			count += 1
-		ring += 1
+	# 输入层只负责把鼠标位置翻译成 cube 坐标，并把意图信号抛给 main。
+	_input_controller.configure(func() -> Vector3i: return _hex_grid.world_to_cube(get_local_mouse_position()))
+	_input_controller.hex_selected.connect(_on_hex_selected)
+	_input_controller.hover_changed.connect(_on_hover_changed)
 
-	# 生成主角，放在中心格
-	_player          = PLAYER_SCENE.instantiate()
-	_player.position = Vector2.ZERO
-	_player.z_index  = 1
+	# 地图和玩家都由主场景统一装配。
+	_hex_grid.generate(_input_controller)
+	_spawn_player()
+	_stamina_bar.update_value(_stamina, MAX_STAMINA)
+	_bubble_bar.update_value(_bubbles, MAX_BUBBLES)
+
+
+# 生成玩家并放到起点格。
+func _spawn_player() -> void:
+	_player_cube = _hex_grid.start_cube
+	_player = PLAYER_SCENE.instantiate()
+	_player.position = _hex_grid.get_world_position(_player_cube)
+	_player.z_index = 1
 	add_child(_player)
+	_set_occupied_hex(_player_cube)
 
 
-# ─────────────────────────────────────────────
-#  点击处理
-# ─────────────────────────────────────────────
-func _on_hex_clicked(_hex_pos: Vector2, target_cube: Vector3i) -> void:
+# 处理格子点击：决定是否寻路，以及是否开始正式移动。
+func _on_hex_selected(target_cube: Vector3i) -> void:
 	if _is_moving or target_cube == _player_cube:
 		return
-	var path := _find_path(_player_cube, target_cube)
-	if path.size() > 1:
-		_move_along_path(path)
+
+	var path: Array[Vector3i] = _hex_grid.find_path(_player_cube, target_cube)
+	if path.size() <= 1:
+		return
+
+	# 计算整条路径的实际体力消耗（地形代价之和），不足则拒绝移动。
+	var total_cost := 0
+	for i in range(1, path.size()):
+		total_cost += int(_hex_grid.get_move_cost(path[i]))
+	if total_cost > _stamina:
+		return
+
+	_move_along_path(path)
 
 
-# ─────────────────────────────────────────────
-#  逐步移动（协程）
-# ─────────────────────────────────────────────
+# 编排一整次移动流程：切换高亮、命令玩家移动，并同步地图状态。
 func _move_along_path(path: Array[Vector3i]) -> void:
 	_is_moving = true
-	_clear_path_highlight()
 
-	# 高亮路径：中间格→黄色，目标格→橙色
+	# 进入正式移动前，先清掉悬停缓存和所有临时高亮，避免视觉状态串在一起。
+	_input_controller.reset_hover()
+	_clear_path_highlight()
+	_clear_preview()
+
+	# 旧占据格在移动开始时先取消，占据状态只保留给最终落脚格。
+	if _occupied_node:
+		_occupied_node.set_occupied(false)
+		_occupied_node = null
+
+	# 起点格在移动期间单独标记，和普通路径格区分开。
+	_origin_node = _hex_grid.get_hex_node(path[0])
+	if _origin_node:
+		_origin_node.set_origin(true)
+
+	# 先把整条路径的视觉状态铺出来，真正移动时再逐格熄灭。
 	for i in range(1, path.size()):
-		var node = _hex_nodes.get(path[i])
+		var node = _hex_grid.get_hex_node(path[i])
 		if node:
-			var is_target := (i == path.size() - 1)
+			var is_target := i == path.size() - 1
 			node.set_highlighted(true, is_target)
 			_path_nodes.append(node)
 
-	# 逐格移动，经过的格子恢复原色
+	# 将路径拆成“要经过的 cube 列表”，方便在每一步完成后同步逻辑位置。
+	var cubes_to_visit: Array[Vector3i] = []
 	for i in range(1, path.size()):
-		_player_cube = path[i]
-		_player.move_to(_hex_map[path[i]])
-		await _player.move_finished          # 等待本步完成
-		var passed = _hex_nodes.get(path[i])
+		cubes_to_visit.append(path[i])
+
+	# 将逻辑路径转换成玩家真正要行走的世界坐标路径。
+	var world_points: Array[Vector2] = []
+	for cube in cubes_to_visit:
+		world_points.append(_hex_grid.get_world_position(cube))
+
+	# Player 负责执行路径移动，main 只在每一步完成后同步逻辑状态。
+	_player.move_along(world_points)
+	for i in range(cubes_to_visit.size()):
+		await _player.step_finished
+		_player_cube = cubes_to_visit[i]
+
+		# 每走一步扣除该格地形代价的体力，并实时更新 UI。
+		var cost := int(_hex_grid.get_move_cost(cubes_to_visit[i]))
+		_stamina -= cost
+		_stamina_bar.update_value(_stamina, MAX_STAMINA)
+
+		# 玩家真正走过这一格后，再关闭该格的路径高亮。
+		var passed = _hex_grid.get_hex_node(cubes_to_visit[i])
 		if passed:
 			passed.set_highlighted(false)
 			_path_nodes.erase(passed)
 
+	# 移动收尾：去掉起点标记，恢复最终占据格，并重新开放输入。
+	if _origin_node:
+		_origin_node.set_origin(false)
+		_origin_node = null
+
+	_set_occupied_hex(_player_cube)
 	_is_moving = false
 
+	# 到达终点 → 胜利（优先于体力判定）
+	if _player_cube == _hex_grid.finish_cube:
+		_victory.show_victory()
+		return
 
+	# 体力耗尽 → Game Over
+	if _stamina <= 0:
+		_game_over.show_game_over()
+
+
+# 更新玩家占据格：取消旧格占据状态，并设置新格占据状态。
+func _set_occupied_hex(cube: Vector3i) -> void:
+	if _occupied_node:
+		_occupied_node.set_occupied(false)
+
+	_occupied_node = _hex_grid.get_hex_node(cube)
+	if _occupied_node:
+		_occupied_node.set_occupied(true)
+
+
+# 清空正式移动路径的高亮状态。
 func _clear_path_highlight() -> void:
 	for node in _path_nodes:
 		node.set_highlighted(false)
 	_path_nodes.clear()
 
 
-# ─────────────────────────────────────────────
-#  悬停预览路径（_process 每帧检测，不依赖信号顺序）
-# ─────────────────────────────────────────────
-var _last_preview_cube: Variant = null   # 上一帧鼠标所在的 cube
-
-@onready var _camera: Camera2D = $Camera2D
-
-
+# 每帧让摄像机跟随玩家当前位置。
 func _process(_delta: float) -> void:
-	# 镜头始终跟随玩家（平滑由 Camera2D 的 position_smoothing 处理）
 	if _player:
 		_camera.position = _player.position
 
+
+# 处理鼠标悬停变化：决定是否显示预览路径，并刷新对应高亮。
+func _on_hover_changed(mouse_cube: Variant) -> void:
+	# 悬停变化时，先清掉上一条预览路径。
+	_clear_preview()
+
+	# 移动中、鼠标不在合法格子上、或悬停在玩家脚下时都不显示预览。
 	if _is_moving:
 		return
-	# 将鼠标屏幕坐标转为本节点局部坐标，再逆算 cube
-	var mouse_cube := _world_to_cube(get_local_mouse_position())
-
-	# 没有变化就不刷新
-	if mouse_cube == _last_preview_cube:
+	if not (mouse_cube is Vector3i):
 		return
-	_last_preview_cube = mouse_cube
-
-	_clear_preview()
-	# 鼠标不在任何格子上，或就在主角格，不显示预览
-	if not _hex_map.has(mouse_cube) or mouse_cube == _player_cube:
+	if not _hex_grid.has_cube(mouse_cube) or mouse_cube == _player_cube:
 		return
 
-	var path := _find_path(_player_cube, mouse_cube)
+	# 预览和正式移动共用同一套寻路结果，只是颜色和生命周期不同。
+	var path: Array[Vector3i] = _hex_grid.find_path(_player_cube, mouse_cube)
 	for i in range(1, path.size()):
-		var node = _hex_nodes.get(path[i])
+		var node = _hex_grid.get_hex_node(path[i])
 		if node:
 			node.set_preview_highlighted(true, i == path.size() - 1)
 			_preview_nodes.append(node)
 
 
+# 清空鼠标悬停产生的预览高亮。
 func _clear_preview() -> void:
 	for node in _preview_nodes:
 		node.set_preview_highlighted(false)
 	_preview_nodes.clear()
 
 
-## 鼠标局部坐标 → 最近的 Cube 坐标（平顶六边形逆变换）
-func _world_to_cube(local_pos: Vector2) -> Vector3i:
-	var q := ( 2.0 / 3.0 * local_pos.x) / HEX_SIZE
-	var r := (-1.0 / 3.0 * local_pos.x + sqrt(3.0) / 3.0 * local_pos.y) / HEX_SIZE
-	return _cube_round(Vector3(q, r, -q - r))
+# 恢复 20 体力（不超过上限）。
+func _on_restore_pressed() -> void:
+	_stamina = mini(_stamina + 20, MAX_STAMINA)
+	_stamina_bar.update_value(_stamina, MAX_STAMINA)
 
 
-## 浮点 Cube 坐标四舍五入到最近整数格
-func _cube_round(frac: Vector3) -> Vector3i:
-	var qr := roundi(frac.x)
-	var rr := roundi(frac.y)
-	var sr := roundi(frac.z)
-	var dq := absf(float(qr) - frac.x)
-	var dr := absf(float(rr) - frac.y)
-	var ds := absf(float(sr) - frac.z)
-	if dq > dr and dq > ds:
-		qr = -rr - sr
-	elif dr > ds:
-		rr = -qr - sr
-	else:
-		sr = -qr - rr
-	return Vector3i(qr, rr, sr)
+# 直接触发 Game Over。
+func _on_game_over_pressed() -> void:
+	_stamina = 0
+	_stamina_bar.update_value(_stamina, MAX_STAMINA)
+	_game_over.show_game_over()
 
 
-# ─────────────────────────────────────────────
-#  A* 寻路（六角 Cube 坐标）
-# ─────────────────────────────────────────────
-func _find_path(start: Vector3i, goal: Vector3i) -> Array[Vector3i]:
-	if start == goal:
-		return []
-
-	# open_set 元素：[f_score, cube]
-	var open_set: Array        = [[0.0, start]]
-	var came_from: Dictionary  = {}
-	var g_score: Dictionary    = {start: 0.0}
-
-	while not open_set.is_empty():
-		# 取 f 值最小的节点
-		open_set.sort_custom(func(a, b): return a[0] < b[0])
-		var current: Vector3i = open_set.pop_front()[1]
-
-		if current == goal:
-			return _reconstruct_path(came_from, current)
-
-		for dir: Vector3i in CUBE_DIRS:
-			var nb: Vector3i = current + dir
-			if not _hex_map.has(nb):
-				continue   # 不是合法格子
-			var tg: float = g_score.get(current, INF) + 1.0
-			if tg < g_score.get(nb, INF):
-				came_from[nb] = current
-				g_score[nb]   = tg
-				open_set.append([tg + _hex_distance(nb, goal), nb])
-
-	return []   # 无路可走
-
-
-func _reconstruct_path(came_from: Dictionary, current: Vector3i) -> Array[Vector3i]:
-	var path: Array[Vector3i] = [current]
-	while came_from.has(current):
-		current = came_from[current]
-		path.push_front(current)
-	return path
-
-
-func _hex_distance(a: Vector3i, b: Vector3i) -> int:
-	return (abs(a.x - b.x) + abs(a.y - b.y) + abs(a.z - b.z)) / 2
-
-
-# ─────────────────────────────────────────────
-#  工具函数
-# ─────────────────────────────────────────────
+# 当视口尺寸变化时，让整张棋盘场景重新居中。
 func _on_viewport_size_changed() -> void:
 	position = get_viewport_rect().size * 0.5
-
-
-func _get_ring(radius: int) -> Array:
-	if radius == 0:
-		return [Vector3i(0, 0, 0)]
-	var results: Array = []
-	var cube := Vector3i(-radius, 0, radius)
-	for dir_idx in 6:
-		for _step in radius:
-			results.append(cube)
-			cube += CUBE_DIRS[dir_idx]
-	return results
-
-
-func _cube_to_world(cube: Vector3i) -> Vector2:
-	var q := float(cube.x)
-	var r := float(cube.y)
-	return Vector2(
-		HEX_SIZE * 1.5       * q,
-		HEX_SIZE * sqrt(3.0) * (r + q * 0.5)
-	)
