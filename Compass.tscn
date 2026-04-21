@@ -1,0 +1,7 @@
+[gd_scene format=3 uid="uid://compass001"]
+
+[ext_resource type="Script" path="res://Script/Compass.gd" id="1_compass"]
+
+[node name="Compass" type="Control"]
+custom_minimum_size = Vector2(120, 120)
+script = ExtResource("1_compass")

@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://lootbar001"]
+
+[ext_resource type="Script" uid="uid://d38ltxlx8uke4" path="res://Script/LootBar.gd" id="1_lootbar"]
+
+[node name="LootBar" type="Control"]
+anchor_right = 0.0
+anchor_bottom = 0.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 72.0
+offset_bottom = 628.0
+mouse_filter = 0
+script = ExtResource("1_lootbar")

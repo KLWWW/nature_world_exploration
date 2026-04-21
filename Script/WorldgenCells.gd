@@ -16,8 +16,8 @@ var blocking_density: float = 0.45
 var cell_map: Dictionary = {}
 ## cube → true（仅边界格存在于此字典中）
 var border_set: Dictionary = {}
-## 种子点列表
-var _seeds: Array[Vector3i] = []
+## 种子点列表（同时也是每个 Cell 的"中心"代表格）。
+var seeds: Array[Vector3i] = []
 
 # ── 对外只读查询 ────────────────────────────────────────────
 ## 返回某个格子的 cell_id，不存在返回 -1。
@@ -36,7 +36,7 @@ func is_border(cube: Vector3i) -> bool:
 func partition(all_cubes: Array, cube_dirs: Array[Vector3i], rng: RandomNumberGenerator) -> void:
 	cell_map.clear()
 	border_set.clear()
-	_seeds.clear()
+	seeds.clear()
 
 	if all_cubes.is_empty():
 		return
@@ -46,15 +46,15 @@ func partition(all_cubes: Array, cube_dirs: Array[Vector3i], rng: RandomNumberGe
 	shuffled.shuffle()
 	var actual_count := mini(cell_count, shuffled.size())
 	for i in actual_count:
-		_seeds.append(shuffled[i] as Vector3i)
+		seeds.append(shuffled[i] as Vector3i)
 
 	# ── 2. 离散 Voronoi：每格归属最近种子 ─────────────────
 	for cube_v in all_cubes:
 		var cube: Vector3i = cube_v as Vector3i
 		var best_id := 0
-		var best_dist := _hex_distance(cube, _seeds[0])
-		for id in range(1, _seeds.size()):
-			var d := _hex_distance(cube, _seeds[id])
+		var best_dist := _hex_distance(cube, seeds[0])
+		for id in range(1, seeds.size()):
+			var d := _hex_distance(cube, seeds[id])
 			if d < best_dist:
 				best_dist = d
 				best_id = id

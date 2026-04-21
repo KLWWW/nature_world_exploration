@@ -2,8 +2,8 @@
 class_name HexTile
 extends Node2D
 
-# 地形类型枚举。
-enum TerrainType { PLAIN, DESERT, MOUNTAIN, START, FINISH }
+const TerrainType = preload("res://Script/TerrainType.gd")
+const POIType     = preload("res://Script/POIType.gd")
 
 # 各地形的默认填充色。
 const TERRAIN_FILL := {
@@ -27,7 +27,7 @@ const TERRAIN_LABEL := {
 	TerrainType.DESERT:   "沙漠",
 	TerrainType.MOUNTAIN: "山",
 	TerrainType.START:    "起点",
-	TerrainType.FINISH:   "终点",
+	TerrainType.FINISH:   "金字塔",
 }
 
 # 点击当前格子时发出的信号，携带该格子的局部位置。
@@ -50,6 +50,8 @@ signal hex_clicked(hex_position: Vector2)
 @onready var _collision: CollisionPolygon2D = $Area2D/CollisionPolygon2D
 # 地形文字标签节点。
 @onready var _terrain_label: Label = $TerrainLabel
+# POI 图标节点组（动态创建的白底 + 主色圆，渲染在所有子节点之上）。
+var _poi_nodes: Array = []
 
 # 当前格子的地形类型。
 var terrain: int = TerrainType.PLAIN
@@ -70,6 +72,28 @@ var _occupied_color: Color = Color(0.6, 0.35, 0.88, 1.0)
 var _is_origin: bool = false
 # 起点格使用的颜色。
 var _origin_color: Color = Color(0.05, 0.18, 0.65, 1.0)
+# 当前是否处于技能范围预览高亮状态。
+var _terraform_ranged: bool = false
+# 技能范围预览使用的颜色。
+var _terraform_range_color: Color = Color(0.2, 0.95, 0.45, 0.80)
+
+# 当前格子上的 POI 类型（POIType.NONE 表示无 POI）。
+var _poi_type: int = POIType.NONE
+# POI 图标的圆形半径（相对于 hex_size）。
+const POI_ICON_RADIUS_RATIO := 0.22
+# POI 图标名称标签的字体大小。
+const POI_ICON_FONT_SIZE := 16
+
+# ── 战争迷雾 ─────────────────────────────────────────────────
+## 迷雾状态枚举值（直接用整数常量，避免引入额外枚举文件）。
+const FOG_HIDDEN   := 0   # 未探索：完全黑色遮罩
+const FOG_EXPLORED := 1   # 已探索：半透明暗色遮罩
+const FOG_VISIBLE  := 2   # 可见：无遮罩
+
+# 当前迷雾状态（默认全黑遮罩）。
+var _fog_state: int = FOG_HIDDEN
+# 迷雾遮罩 Polygon2D 节点（动态创建，z_index 最高）。
+var _fog_overlay: Polygon2D = null
 
 
 # 设置地形类型：更新颜色、边框和文字标签。
@@ -82,10 +106,15 @@ func set_terrain(type: int) -> void:
 		_update_shape()
 
 
-# 节点就绪后刷新一次几何和颜色表现。
+# 节点就绪后刷新一次几何和颜色表现，并补绘尚未创建的 POI 图标。
 func _ready() -> void:
 	_terrain_label.text = TERRAIN_LABEL.get(terrain, "")
 	_update_shape()
+	# 如果 set_poi 在 _ready 之前被调用过，此处补绘图标。
+	if _poi_type != POIType.NONE:
+		var t := _poi_type
+		_poi_type = POIType.NONE  # 重置，让 set_poi 重新执行
+		set_poi(t)
 
 
 # 视觉缩小系数，用于在格子之间产生间隙（1.0 = 无间距，越小间距越大）。
@@ -158,6 +187,18 @@ func set_origin(on: bool) -> void:
 	_apply_color()
 
 
+# 设置技能范围预览高亮（绿色轮廓提示改造范围）。
+func set_terraform_ranged(on: bool) -> void:
+	_terraform_ranged = on
+	if on:
+		_border.default_color = _terraform_range_color
+		_border.width = 5.0
+	else:
+		_border.default_color = border_color
+		_border.width = border_width
+	_apply_color()
+
+
 # 按优先级计算格子当前应该显示的基础颜色。
 func _base_color() -> Color:
 	# 这里用固定优先级解决颜色冲突，避免多个状态同时存在时互相覆盖得不可预期。
@@ -169,6 +210,8 @@ func _base_color() -> Color:
 		return _occupied_color
 	if _previewed:
 		return _preview_color
+	if _terraform_ranged:
+		return fill_color.lerp(_terraform_range_color, 0.25)
 	return fill_color
 
 
@@ -209,3 +252,166 @@ func _set_border_color(v: Color) -> void:
 func _set_border_width(v: float) -> void:
 	border_width = v
 	_update_shape()
+
+
+# ── POI 图标渲染 ─────────────────────────────────────────────
+
+## 设置该格的 POI 类型，在格子中央显示对应的彩色圆形图标。
+## 传入 POIType.NONE 则清除图标。
+## 使用动态子节点 Polygon2D 而非 _draw()，确保渲染层级高于 $Polygon2D。
+func set_poi(type: int) -> void:
+	_poi_type = type
+
+	# 移除旧图标节点（白底 + 主色圆都清除）。
+	for n in _poi_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_poi_nodes.clear()
+
+	# NONE / START 不绘制（起点地形色已足够区分）。
+	if type == POIType.NONE or type == POIType.START:
+		return
+
+	var icon_color: Color = POIType.ICON_COLOR.get(type, Color(1, 1, 1, 1))
+	var radius: float = hex_size * POI_ICON_RADIUS_RATIO
+
+	# ── FINISH（金字塔）：用三角形图标代替圆形 ──
+	if type == POIType.FINISH:
+		var pyramid_size: float = radius * 1.6
+		# 白底三角（稍大一圈）
+		var bg := Polygon2D.new()
+		bg.polygon = _make_triangle_polygon(pyramid_size + 3.0)
+		bg.color   = Color(1, 1, 1, 0.85)
+		bg.z_index = 11
+		add_child(bg)
+		_poi_nodes.append(bg)
+		# 金色主三角
+		var icon := Polygon2D.new()
+		icon.polygon = _make_triangle_polygon(pyramid_size)
+		icon.color   = icon_color
+		icon.z_index = 12
+		add_child(icon)
+		_poi_nodes.append(icon)
+		# 名称标签
+		var lbl := _make_poi_label(type, pyramid_size + 3.0)
+		lbl.z_index = 13
+		add_child(lbl)
+		_poi_nodes.append(lbl)
+		return
+
+	# ── 普通 POI：圆形图标 ──
+	# 外圈白底（提升对比度）
+	var bg := Polygon2D.new()
+	bg.polygon = _make_circle_polygon(radius + 3.0, 24)
+	bg.color   = Color(1, 1, 1, 0.85)
+	bg.z_index = 11
+	add_child(bg)
+	_poi_nodes.append(bg)
+
+	# 主色填充圆
+	var icon := Polygon2D.new()
+	icon.polygon = _make_circle_polygon(radius, 24)
+	icon.color   = icon_color
+	icon.z_index = 12
+	add_child(icon)
+	_poi_nodes.append(icon)
+
+	# 名称标签（显示在图标下方）
+	var label := _make_poi_label(type, radius + 3.0)
+	label.z_index = 13
+	add_child(label)
+	_poi_nodes.append(label)
+
+
+## 生成以原点为中心、给定半径的近似圆形多边形顶点（用于 Polygon2D）。
+func _make_circle_polygon(radius: float, segments: int) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in segments:
+		var a := TAU * i / segments
+		pts.append(Vector2(cos(a) * radius, sin(a) * radius))
+	return pts
+
+
+## 生成以原点为中心、正立等边三角形的顶点（金字塔图标用）。
+## size 为从中心到顶点的距离。
+func _make_triangle_polygon(size: float) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	# 顶点朝上：三个角分别在 -90°、+30°、+150°
+	for i in 3:
+		var a := deg_to_rad(-90.0 + 120.0 * i)
+		pts.append(Vector2(cos(a) * size, sin(a) * size))
+	return pts
+
+
+## 创建 POI 名称标签节点，显示在图标正下方。
+## icon_bottom 为图标底部到原点的距离，用于定位标签位置。
+func _make_poi_label(type: int, icon_bottom: float) -> Label:
+	var label := Label.new()
+	label.text = POIType.LABEL.get(type, "")
+	label.z_index = 3
+	label.add_theme_font_size_override("font_size", POI_ICON_FONT_SIZE)
+	label.add_theme_color_override("font_color", Color(0.1, 0.1, 0.1, 1.0))
+	label.add_theme_color_override("font_shadow_color", Color(1, 1, 1, 0.8))
+	label.add_theme_constant_override("shadow_offset_x", 1)
+	label.add_theme_constant_override("shadow_offset_y", 1)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.vertical_alignment   = VERTICAL_ALIGNMENT_TOP
+	label.size     = Vector2(hex_size, 24)
+	label.position = Vector2(-hex_size * 0.5, icon_bottom)
+	return label
+
+
+# ── 战争迷雾接口 ──────────────────────────────────────────────
+
+## 设置该格子的迷雾状态（FOG_HIDDEN / FOG_EXPLORED / FOG_VISIBLE）。
+## 同时控制遮罩透明度和 POI / 地形标签的可见性。
+func set_fog_state(state: int) -> void:
+	_fog_state = state
+	_ensure_fog_overlay()
+	match state:
+		FOG_HIDDEN:
+			_fog_overlay.color = Color(0.0, 0.0, 0.0, 1.0)
+			_terrain_label.visible = false
+			for n in _poi_nodes:
+				if is_instance_valid(n):
+					n.visible = false
+		FOG_EXPLORED:
+			_fog_overlay.color = Color(0.0, 0.0, 0.0, 0.55)
+			_terrain_label.visible = true
+			for n in _poi_nodes:
+				if is_instance_valid(n):
+					n.visible = true
+		FOG_VISIBLE:
+			_fog_overlay.color = Color(0.0, 0.0, 0.0, 0.0)
+			_terrain_label.visible = true
+			for n in _poi_nodes:
+				if is_instance_valid(n):
+					n.visible = true
+
+
+## 返回当前迷雾状态。
+func get_fog_state() -> int:
+	return _fog_state
+
+
+## 将 POI 图标灰化，表示已触发失效（图标保留但不可再触发）。
+## 将所有图标节点颜色替换为半透明灰，并将文字标签也调暗。
+func set_poi_inactive() -> void:
+	for n in _poi_nodes:
+		if not is_instance_valid(n):
+			continue
+		if n is Polygon2D:
+			n.color = Color(0.45, 0.45, 0.45, 0.7)
+		elif n is Label:
+			n.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5, 0.8))
+
+
+## 确保迷雾遮罩节点存在（首次调用时动态创建）。
+func _ensure_fog_overlay() -> void:
+	if _fog_overlay != null and is_instance_valid(_fog_overlay):
+		return
+	_fog_overlay = Polygon2D.new()
+	_fog_overlay.polygon = _get_hex_points(hex_size)
+	_fog_overlay.color   = Color(0.0, 0.0, 0.0, 1.0)
+	_fog_overlay.z_index = 10
+	add_child(_fog_overlay)

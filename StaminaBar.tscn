@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://stamina_bar_scene"]
 
-[ext_resource type="Script" uid="uid://stamina_bar_gd01" path="res://Script/StaminaBar.gd" id="1_stbar"]
+[ext_resource type="Script" uid="uid://k8vjh160v0wb" path="res://Script/StaminaBar.gd" id="1_stbar"]
 
 [node name="StaminaBar" type="MarginContainer"]
 script = ExtResource("1_stbar")

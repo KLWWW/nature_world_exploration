@@ -1,61 +1,116 @@
 [gd_scene format=3 uid="uid://djeb0cuoeaeet"]
 
 [ext_resource type="Script" uid="uid://b0cykx8q8stud" path="res://Script/main.gd" id="1_ig7tw"]
-[ext_resource type="Script" path="res://Script/InputController.gd" id="2_jqpwa"]
-[ext_resource type="Script" path="res://Script/HexGrid.gd" id="3_u77vh"]
-[ext_resource type="PackedScene" uid="uid://stamina_bar_scene" path="res://StaminaBar.tscn" id="4_stbar"]
-[ext_resource type="PackedScene" uid="uid://game_over_scene01" path="res://GameOver.tscn" id="5_goscn"]
-[ext_resource type="PackedScene" uid="uid://victory_scene_001" path="res://Victory.tscn" id="6_vicscn"]
+[ext_resource type="Script" uid="uid://b8f57h25b6in1" path="res://Script/InputController.gd" id="2_jqpwa"]
+[ext_resource type="Script" uid="uid://df83havv8e3x5" path="res://Script/HexGrid.gd" id="3_u77vh"]
+[ext_resource type="PackedScene" path="res://StaminaBar.tscn" id="4_stbar"]
+[ext_resource type="PackedScene" path="res://GameOver.tscn" id="5_goscn"]
+[ext_resource type="PackedScene" path="res://Victory.tscn" id="6_vicscn"]
+[ext_resource type="PackedScene" path="res://LootBar.tscn" id="7_lootbar"]
+[ext_resource type="PackedScene" path="res://Compass.tscn" id="8_compass"]
 
 [node name="Node2D" type="Node2D" unique_id=1481814719]
 script = ExtResource("1_ig7tw")
 
-[node name="HexGrid" type="Node2D" parent="."]
+[node name="HexGrid" type="Node2D" parent="." unique_id=2081813721]
 script = ExtResource("3_u77vh")
+noise_mountain_threshold = 0.09000000000000008
+noise_desert_threshold = -0.09999999999999998
 
-[node name="InputController" type="Node" parent="."]
+[node name="InputController" type="Node" parent="." unique_id=996548671]
 script = ExtResource("2_jqpwa")
 
-[node name="Camera2D" type="Camera2D" parent="."]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=305898683]
 zoom = Vector2(0.55, 0.55)
 position_smoothing_enabled = true
 position_smoothing_speed = 6.0
 
-[node name="UILayer" type="CanvasLayer" parent="."]
+[node name="UILayer" type="CanvasLayer" parent="." unique_id=741880159]
 
-[node name="StaminaBar" parent="UILayer" instance=ExtResource("4_stbar")]
-resource_name = "体力"
-
-[node name="BubbleBar" parent="UILayer" instance=ExtResource("4_stbar")]
-resource_name = "泡泡"
-bar_color = Color(0.4, 0.75, 1.0, 1.0)
+[node name="StaminaBar" parent="UILayer" unique_id=803398231 instance=ExtResource("4_stbar")]
 offset_left = 16.0
-offset_top = 76.0
-offset_right = 260.0
-offset_bottom = 136.0
-
-[node name="ButtonPanel" type="VBoxContainer" parent="UILayer"]
-offset_left = -176.0
 offset_top = 16.0
-offset_right = -16.0
-offset_bottom = 100.0
+offset_right = 524.0
+offset_bottom = 76.0
+
+[node name="BubbleBar" parent="UILayer" unique_id=1696648282 instance=ExtResource("4_stbar")]
+offset_left = 16.0
+offset_top = 84.0
+offset_right = 524.0
+offset_bottom = 144.0
+resource_name = "泡泡"
+bar_color = Color(0.4, 0.75, 1, 1)
+
+[node name="ButtonPanel" type="VBoxContainer" parent="UILayer" unique_id=496546732]
 anchors_preset = 1
 anchor_left = 1.0
 anchor_right = 1.0
+offset_left = -168.0
+offset_top = 160.0
+offset_right = -16.0
+offset_bottom = 280.0
 grow_horizontal = 0
 theme_override_constants/separation = 8
 
-[node name="RestoreBtn" type="Button" parent="UILayer/ButtonPanel"]
+[node name="RestoreBtn" type="Button" parent="UILayer/ButtonPanel" unique_id=1426045738]
 layout_mode = 2
-text = "恢复体力 +20"
+text = "🔧 DEBUG: 恢复体力 +20"
+modulate = Color(1, 0.6, 0.2, 1)
 
-[node name="GameOverBtn" type="Button" parent="UILayer/ButtonPanel"]
+[node name="GameOverBtn" type="Button" parent="UILayer/ButtonPanel" unique_id=407223596]
 layout_mode = 2
-text = "结束游戏"
+text = "🔧 DEBUG: 结束游戏"
+modulate = Color(1, 0.6, 0.2, 1)
 
-[node name="GameOver" parent="UILayer" instance=ExtResource("5_goscn")]
+[node name="RevealAllBtn" type="Button" parent="UILayer/ButtonPanel" unique_id=407223597]
+layout_mode = 2
+text = "🌐 DEBUG: 去除迷雾"
+modulate = Color(1, 0.6, 0.2, 1)
 
-[node name="Victory" parent="UILayer" instance=ExtResource("6_vicscn")]
+[node name="TerraformBtn" type="Button" parent="UILayer" unique_id=512334871]
+anchor_left = 0.0
+anchor_top = 0.5
+anchor_right = 0.0
+anchor_bottom = 0.5
+offset_left = 12.0
+offset_top = -36.0
+offset_right = 84.0
+offset_bottom = 36.0
+grow_vertical = 2
+text = "🌿\n改造环境"
+custom_minimum_size = Vector2(72, 72)
+theme_override_font_sizes/font_size = 20
+
+[node name="LootBar" parent="UILayer" unique_id=901234567 instance=ExtResource("7_lootbar")]
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -130.0
+offset_top = -112.0
+offset_right = 130.0
+offset_bottom = -8.0
+
+[node name="Compass" parent="UILayer" instance=ExtResource("8_compass")]
+anchors_preset = 4
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -136.0
+offset_top = -136.0
+offset_right = -16.0
+offset_bottom = -16.0
+grow_horizontal = 0
+grow_vertical = 0
+
+[node name="GameOver" parent="UILayer" unique_id=1816773150 instance=ExtResource("5_goscn")]
+layout_mode = 3
+
+[node name="Victory" parent="UILayer" unique_id=1708554560 instance=ExtResource("6_vicscn")]
+layout_mode = 3
 
 [connection signal="pressed" from="UILayer/ButtonPanel/RestoreBtn" to="." method="_on_restore_pressed"]
 [connection signal="pressed" from="UILayer/ButtonPanel/GameOverBtn" to="." method="_on_game_over_pressed"]
+[connection signal="pressed" from="UILayer/ButtonPanel/RevealAllBtn" to="." method="_on_reveal_all_pressed"]
+[connection signal="pressed" from="UILayer/TerraformBtn" to="." method="_on_terraform_pressed"]
